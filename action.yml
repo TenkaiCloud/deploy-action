@@ -1,0 +1,50 @@
+name: Tenkai Deploy
+description: Deploy a Web Application on Tenkai through its Deploy Hook, and fail the job when the Deployment fails.
+author: Tenkai
+branding:
+  icon: upload-cloud
+  color: gray-dark
+
+inputs:
+  deploy_hook_url:
+    description: The URL of the Deploy Hook, from the Configuration tab of the Web Application.
+    required: true
+  deploy_hook_secret:
+    description: The secret of the Deploy Hook. Keep it in a repository secret.
+    required: true
+  wait:
+    description: Wait for the Deployment to end and fail when it fails. Set to "false" to stop once Tenkai queued it.
+    required: false
+    default: 'true'
+  timeout:
+    description: How many seconds to wait for the Deployment to end before the step fails.
+    required: false
+    default: '900'
+  interval:
+    description: How many seconds to wait between two reads of the Deployment.
+    required: false
+    default: '5'
+
+outputs:
+  deployment_id:
+    description: The identifier of the Deployment Tenkai queued.
+    value: ${{ steps.deploy.outputs.deployment_id }}
+  deployment_url:
+    description: The URL that tells how the Deployment goes, read with the secret of the Deploy Hook.
+    value: ${{ steps.deploy.outputs.deployment_url }}
+  status:
+    description: How the Deployment ended, "succeeded" or "failed". "started" when the action did not wait for it.
+    value: ${{ steps.deploy.outputs.status }}
+
+runs:
+  using: composite
+  steps:
+    - id: deploy
+      shell: bash
+      run: '"$GITHUB_ACTION_PATH/deploy.sh"'
+      env:
+        TENKAI_DEPLOY_HOOK_URL: ${{ inputs.deploy_hook_url }}
+        TENKAI_DEPLOY_HOOK_SECRET: ${{ inputs.deploy_hook_secret }}
+        TENKAI_WAIT: ${{ inputs.wait }}
+        TENKAI_TIMEOUT: ${{ inputs.timeout }}
+        TENKAI_INTERVAL: ${{ inputs.interval }}
