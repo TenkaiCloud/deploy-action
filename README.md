@@ -69,7 +69,7 @@ jobs:
           path: dist
 ```
 
-Tenkai takes files and directories only: the step fails when the directory holds a symbolic link. The archive must stay under 100 MB, and the files under 512 MB and 50,000 entries.
+Tenkai takes files and directories only: the step fails when the directory holds a symbolic link. It packs a hard-linked file as a regular file on Linux runners, and fails on one on macOS runners, whose tar cannot. The archive must stay under 100 MB, and the files under 512 MB and 50,000 entries.
 
 ## Inputs
 

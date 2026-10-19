@@ -139,6 +139,14 @@ deploy TENKAI_PATH="$site"
 check "fails when Tenkai refuses the files" exits 1
 check "says why Tenkai refused the files" logs "::error::Tenkai did not queue the Deployment. invalid_archive: Tenkai refused with invalid_archive"
 
+ln "$site/index.html" "$site/copy.html"
+tenkai 202 succeeded
+deploy TENKAI_PATH="$site"
+check "deploys a hard-linked file" exits 0
+check "packs each hard-linked file as a regular file" [ "$(tar -tvzf "$work/sent.tar.gz" | grep --count '^h')" == 0 ]
+check "packs the content of a hard-linked file" [ "$(tar -xzOf "$work/sent.tar.gz" ./copy.html)" == "<div id=app>" ]
+rm "$site/copy.html"
+
 ln -s /etc/passwd "$site/leak"
 tenkai 202 succeeded
 deploy TENKAI_PATH="$site"

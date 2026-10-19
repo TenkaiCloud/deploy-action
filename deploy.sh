@@ -64,9 +64,24 @@ if [[ -n "$site" ]]; then
 		exit 1
 	fi
 
+	# Tenkai refuses the hard-link entry tar writes for the second path of a file. GNU tar, on Linux runners, writes
+	# each path as a regular file instead. The bsdtar of macOS cannot, so the step refuses hard links there.
+	tar_options=()
+
+	if tar --version 2>/dev/null | grep --quiet 'GNU tar'; then
+		tar_options=(--hard-dereference)
+	else
+		linked=$(find "$site" -type f -links +1 | head -n 5)
+
+		if [[ -n "$linked" ]]; then
+			echo "::error::$site holds hard links, which the tar of this runner cannot pack as files. Copy them, or deploy from a Linux runner: ${linked//$'\n'/, }"
+			exit 1
+		fi
+	fi
+
 	# The content of the directory at the root of the archive, as ./index.html. COPYFILE_DISABLE keeps the tar of
 	# macOS from adding the ._ files of extended attributes.
-	COPYFILE_DISABLE=1 tar -czf "$archive" -C "$site" .
+	COPYFILE_DISABLE=1 tar ${tar_options[@]+"${tar_options[@]}"} -czf "$archive" -C "$site" .
 	archive_bytes=$(wc -c <"$archive" | tr -d ' ')
 
 	if ((archive_bytes > max_archive_bytes)); then
