@@ -24,7 +24,7 @@ trap 'stop_server; rm -rf "$work"' EXIT
 # Starts a Tenkai that answers the trigger with a status, then each read with the next answer.
 tenkai() {
 	stop_server
-	python3 "$root/tests/mock_tenkai.py" "$port" "$secret" "$@" >"$work/requests" &
+	MOCK_TENKAI_BODY="$work/sent.tar.gz" python3 "$root/tests/mock_tenkai.py" "$port" "$secret" "$@" >"$work/requests" &
 	server=$!
 
 	until curl --silent --output /dev/null "http://127.0.0.1:$port/"; do
@@ -59,6 +59,8 @@ check() {
 exits() { [[ "$exit_status" == "$1" ]]; }
 logs() { grep --quiet --fixed-strings -- "$1" "$work/log"; }
 outputs() { grep --quiet --line-regexp --fixed-strings -- "$1" "$work/outputs"; }
+posts() { [[ "$(grep --count '^POST' "$work/requests")" == "$1" ]]; }
+sent() { grep --quiet --line-regexp --fixed-strings -- "POST /deploy-hooks/resource $1" "$work/requests"; }
 reads() { [[ "$(grep --count '^GET' "$work/requests")" == "$1" ]]; }
 
 tenkai 202 started started succeeded
@@ -76,10 +78,12 @@ check "fails when the Deployment fails" exits 1
 check "says why the Deployment failed" logs "::error::The Deployment failed. Image build failed"
 check "gives the failed status as an output" outputs "status=failed"
 
-tenkai 409 started
+check "sends no body without a path" sent "- 0"
+
+tenkai 409:mutation_in_progress started
 deploy
 check "fails when Tenkai refuses the Deployment" exits 1
-check "says why Tenkai refused" logs "mutation_in_progress: Another Deployment of this Web Application is in progress"
+check "says why Tenkai refused" logs "mutation_in_progress: Tenkai refused with mutation_in_progress"
 check "reads nothing after a refusal" reads 0
 
 tenkai 202 started
@@ -115,6 +119,47 @@ check "says the secret is wrong" logs "invalid_deploy_hook_secret"
 tenkai 202 succeeded
 deploy TENKAI_INTERVAL=0
 check "refuses an interval of zero" exits 1
+
+# A built site, with a file in a directory, and a directory without files.
+site="$work/dist"
+mkdir -p "$site/assets" "$site/empty"
+echo '<div id=app>' >"$site/index.html"
+echo 'mount();' >"$site/assets/app.js"
+
+tenkai 202 succeeded
+deploy TENKAI_PATH="$site"
+check "deploys the files of a path" exits 0
+check "sends them as application/gzip" sent "application/gzip $(wc -c <"$work/sent.tar.gz" | tr -d ' ')"
+check "packs the content of the directory at the root of the archive" \
+	[ "$(tar -tzf "$work/sent.tar.gz" | sort | tr '\n' ' ')" == "./ ./assets/ ./assets/app.js ./empty/ ./index.html " ]
+check "packs the files as they are" [ "$(tar -xzOf "$work/sent.tar.gz" ./assets/app.js)" == "mount();" ]
+
+tenkai 422:invalid_archive
+deploy TENKAI_PATH="$site"
+check "fails when Tenkai refuses the files" exits 1
+check "says why Tenkai refused the files" logs "::error::Tenkai did not queue the Deployment. invalid_archive: Tenkai refused with invalid_archive"
+
+ln -s /etc/passwd "$site/leak"
+tenkai 202 succeeded
+deploy TENKAI_PATH="$site"
+check "refuses a path that holds a link" exits 1
+check "names the link" logs "$site/leak"
+check "sends nothing when the path holds a link" posts 0
+rm "$site/leak"
+
+tenkai 202 succeeded
+deploy TENKAI_PATH="$site/index.html"
+check "refuses a path that is not a directory" exits 1
+check "sends nothing when the path is not a directory" posts 0
+
+# Random bytes do not compress, so the archive weighs more than 100 MB.
+head -c $((100 * 1024 * 1024 + 1)) /dev/urandom >"$site/video.bin"
+tenkai 202 succeeded
+deploy TENKAI_PATH="$site"
+check "refuses an archive over 100 MB" exits 1
+check "says the archive is too large" logs "Tenkai takes an archive under 100 MB"
+check "sends nothing over 100 MB" posts 0
+rm "$site/video.bin"
 
 if ((failures > 0)); then
 	echo "$failures checks failed"

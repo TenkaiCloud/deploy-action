@@ -1,12 +1,15 @@
 """A Tenkai that answers a Deploy Hook from a script, for the tests of deploy.sh.
 
-Usage: mock_tenkai.py <port> <secret> <trigger status> <read answer>...
+Usage: mock_tenkai.py <port> <secret> <trigger answer> <read answer>...
 
-A read answer is "started", "succeeded", "failed", or an HTTP status such as "503". The last one repeats.
-Each request is written to stdout as "<method> <path>".
+A trigger answer is "202", or the HTTP status and the error of a refusal, such as "422:invalid_archive". A read
+answer is "started", "succeeded", "failed", or an HTTP status such as "503". The last one repeats.
+Each request is written to stdout as "<method> <path> <Content-Type or -> <length of the body>". The body of the
+last POST is kept in the file that MOCK_TENKAI_BODY names.
 """
 
 import json
+import os
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -29,7 +32,13 @@ class Tenkai(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def authorized(self):
-        print(f"{self.command} {self.path}", flush=True)
+        length = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(length)
+        print(f"{self.command} {self.path} {self.headers.get('Content-Type') or '-'} {length}", flush=True)
+
+        if self.command == "POST":
+            with open(os.environ["MOCK_TENKAI_BODY"], "wb") as kept:
+                kept.write(body)
 
         if self.headers.get("Authorization") == f"Bearer {secret}":
             return True
@@ -43,7 +52,8 @@ class Tenkai(BaseHTTPRequestHandler):
             return
 
         if trigger_status != "202":
-            self.answer(int(trigger_status), {"error": "mutation_in_progress", "message": "Another Deployment of this Web Application is in progress"})
+            status, error = trigger_status.split(":")
+            self.answer(int(status), {"error": error, "message": f"Tenkai refused with {error}"})
 
             return
 
