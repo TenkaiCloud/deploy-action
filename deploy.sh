@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# Asks Tenkai for a Deployment through a Deploy Hook, then reads the Deployment until it ends.
+# Asks Tenkai for a Deployment through a Deploy Hook, then reads the Deployment until it ends. With TENKAI_PATH, sends
+# the content of that directory as the tar.gz of a Web Application of Static Files.
 # Exits 0 when the Deployment succeeded, or was queued and TENKAI_WAIT is "false". Exits 1 otherwise.
 
 set -euo pipefail
@@ -10,6 +11,9 @@ set -euo pipefail
 wait_for_end="${TENKAI_WAIT:-true}"
 timeout="${TENKAI_TIMEOUT:-900}"
 interval="${TENKAI_INTERVAL:-5}"
+path="${TENKAI_PATH:-}"
+# The size of the archive Tenkai accepts. Tenkai stops reading beyond it, so the step checks it before it sends.
+max_archive_bytes=$((100 * 1024 * 1024))
 # How many reads in a row may fail before the step gives up: a 5xx, a 429 or a network error.
 max_failed_reads=5
 
@@ -22,7 +26,8 @@ fi
 echo "::add-mask::$TENKAI_DEPLOY_HOOK_SECRET"
 
 body=$(mktemp)
-trap 'rm -f "$body"' EXIT
+archive=$(mktemp)
+trap 'rm -f "$body" "$archive"' EXIT
 
 # Sends a request with the secret and prints the HTTP status. The body goes to "$body". Prints 000 when
 # Tenkai did not answer.
@@ -43,7 +48,56 @@ output() {
 	fi
 }
 
-status=$(request --request POST "$TENKAI_DEPLOY_HOOK_URL")
+files=()
+
+if [[ -n "$path" ]]; then
+	# The directory itself, through the links of the path, so the checks below read the tree that tar packs. An empty
+	# CDPATH keeps cd from resolving a relative path elsewhere, and -P follows a link before the .. after it, as tar does.
+	if ! site=$(CDPATH="" cd -P -- "$path" 2>/dev/null && pwd -P); then
+		echo "::error::path must be a directory, and $path is not one"
+		exit 1
+	fi
+
+	# Tenkai takes regular files and directories only, so the archive keeps no link to a file outside the directory.
+	others=$(find "$site" -mindepth 1 ! -type f ! -type d | head -n 5)
+
+	if [[ -n "$others" ]]; then
+		echo "::error::$path holds entries that are neither files nor directories, such as links. Tenkai takes files and directories only: ${others//$'\n'/, }"
+		exit 1
+	fi
+
+	# Tenkai refuses the hard-link entry tar writes for the second path of a file. GNU tar, on Linux runners, writes
+	# each path as a regular file instead. The bsdtar of macOS cannot, so the step refuses hard links there.
+	tar_options=()
+
+	if tar --version 2>/dev/null | grep --quiet 'GNU tar'; then
+		tar_options=(--hard-dereference)
+	else
+		linked=$(find "$site" -type f -links +1 | head -n 5)
+
+		if [[ -n "$linked" ]]; then
+			echo "::error::$path holds hard links, which the tar of this runner cannot pack as files. Copy them, or deploy from a Linux runner: ${linked//$'\n'/, }"
+			exit 1
+		fi
+	fi
+
+	# The content of the directory at the root of the archive, as ./index.html. COPYFILE_DISABLE keeps the tar of
+	# macOS from adding the ._ files of extended attributes.
+	COPYFILE_DISABLE=1 tar ${tar_options[@]+"${tar_options[@]}"} -czf "$archive" -C "$site" .
+	archive_bytes=$(wc -c <"$archive" | tr -d ' ')
+
+	if ((archive_bytes > max_archive_bytes)); then
+		echo "::error::The archive of $path weighs $((archive_bytes / 1024 / 1024)) MB. Tenkai takes an archive under 100 MB."
+		exit 1
+	fi
+
+	echo "Sending $path, $(((archive_bytes + 1023) / 1024)) KB packed"
+	# The upload may take longer than a read.
+	files=(--max-time 600 --header "Content-Type: application/gzip" --data-binary "@$archive")
+fi
+
+# The expansion stays empty under set -u in the bash 3 of macOS.
+status=$(request --request POST ${files[@]+"${files[@]}"} "$TENKAI_DEPLOY_HOOK_URL")
 
 if [[ "$status" != "202" ]]; then
 	echo "::error::Tenkai did not queue the Deployment. $(refusal "$status")"

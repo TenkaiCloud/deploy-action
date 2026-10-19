@@ -12,6 +12,10 @@ inputs:
   deploy_hook_secret:
     description: The secret of the Deploy Hook. Keep it in a repository secret.
     required: true
+  path:
+    description: The directory to deploy to a Web Application of Static Files, such as "dist". The action sends its content. Leave it out for any other Web Application.
+    required: false
+    default: ''
   wait:
     description: Wait for the Deployment to end and fail when it fails. Set to "false" to stop once Tenkai queued it.
     required: false
@@ -45,6 +49,7 @@ runs:
       env:
         TENKAI_DEPLOY_HOOK_URL: ${{ inputs.deploy_hook_url }}
         TENKAI_DEPLOY_HOOK_SECRET: ${{ inputs.deploy_hook_secret }}
+        TENKAI_PATH: ${{ inputs.path }}
         TENKAI_WAIT: ${{ inputs.wait }}
         TENKAI_TIMEOUT: ${{ inputs.timeout }}
         TENKAI_INTERVAL: ${{ inputs.interval }}
