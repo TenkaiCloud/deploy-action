@@ -11,7 +11,7 @@ set -euo pipefail
 wait_for_end="${TENKAI_WAIT:-true}"
 timeout="${TENKAI_TIMEOUT:-900}"
 interval="${TENKAI_INTERVAL:-5}"
-site="${TENKAI_PATH:-}"
+path="${TENKAI_PATH:-}"
 # The size of the archive Tenkai accepts. Tenkai stops reading beyond it, so the step checks it before it sends.
 max_archive_bytes=$((100 * 1024 * 1024))
 # How many reads in a row may fail before the step gives up: a 5xx, a 429 or a network error.
@@ -50,9 +50,11 @@ output() {
 
 files=()
 
-if [[ -n "$site" ]]; then
-	if [[ ! -d "$site" ]]; then
-		echo "::error::path must be a directory, and $site is not one"
+if [[ -n "$path" ]]; then
+	# The directory itself, through the links of the path, so the checks below read the tree that tar packs. An empty
+	# CDPATH keeps cd from resolving a relative path elsewhere.
+	if ! site=$(CDPATH="" cd -- "$path" 2>/dev/null && pwd -P); then
+		echo "::error::path must be a directory, and $path is not one"
 		exit 1
 	fi
 
@@ -60,7 +62,7 @@ if [[ -n "$site" ]]; then
 	others=$(find "$site" -mindepth 1 ! -type f ! -type d | head -n 5)
 
 	if [[ -n "$others" ]]; then
-		echo "::error::$site holds entries that are neither files nor directories, such as links. Tenkai takes files and directories only: ${others//$'\n'/, }"
+		echo "::error::$path holds entries that are neither files nor directories, such as links. Tenkai takes files and directories only: ${others//$'\n'/, }"
 		exit 1
 	fi
 
@@ -74,7 +76,7 @@ if [[ -n "$site" ]]; then
 		linked=$(find "$site" -type f -links +1 | head -n 5)
 
 		if [[ -n "$linked" ]]; then
-			echo "::error::$site holds hard links, which the tar of this runner cannot pack as files. Copy them, or deploy from a Linux runner: ${linked//$'\n'/, }"
+			echo "::error::$path holds hard links, which the tar of this runner cannot pack as files. Copy them, or deploy from a Linux runner: ${linked//$'\n'/, }"
 			exit 1
 		fi
 	fi
@@ -85,11 +87,11 @@ if [[ -n "$site" ]]; then
 	archive_bytes=$(wc -c <"$archive" | tr -d ' ')
 
 	if ((archive_bytes > max_archive_bytes)); then
-		echo "::error::The archive of $site weighs $((archive_bytes / 1024 / 1024)) MB. Tenkai takes an archive under 100 MB."
+		echo "::error::The archive of $path weighs $((archive_bytes / 1024 / 1024)) MB. Tenkai takes an archive under 100 MB."
 		exit 1
 	fi
 
-	echo "Sending $site, $(((archive_bytes + 1023) / 1024)) KB packed"
+	echo "Sending $path, $(((archive_bytes + 1023) / 1024)) KB packed"
 	# The upload may take longer than a read.
 	files=(--max-time 600 --header "Content-Type: application/gzip" --data-binary "@$archive")
 fi

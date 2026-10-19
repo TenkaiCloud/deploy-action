@@ -153,6 +153,14 @@ deploy TENKAI_PATH="$site"
 check "refuses a path that holds a link" exits 1
 check "names the link" logs "$site/leak"
 check "sends nothing when the path holds a link" posts 0
+
+# A path that is a link to the site: the checks read the tree that tar packs, through the link.
+ln -s "$site" "$work/output"
+tenkai 202 succeeded
+deploy TENKAI_PATH="$work/output"
+check "refuses a linked path that holds a link" exits 1
+check "sends nothing when a linked path holds a link" posts 0
+rm "$work/output"
 rm "$site/leak"
 
 tenkai 202 succeeded
