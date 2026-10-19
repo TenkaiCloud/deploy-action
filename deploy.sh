@@ -52,8 +52,8 @@ files=()
 
 if [[ -n "$path" ]]; then
 	# The directory itself, through the links of the path, so the checks below read the tree that tar packs. An empty
-	# CDPATH keeps cd from resolving a relative path elsewhere.
-	if ! site=$(CDPATH="" cd -- "$path" 2>/dev/null && pwd -P); then
+	# CDPATH keeps cd from resolving a relative path elsewhere, and -P follows a link before the .. after it, as tar does.
+	if ! site=$(CDPATH="" cd -P -- "$path" 2>/dev/null && pwd -P); then
 		echo "::error::path must be a directory, and $path is not one"
 		exit 1
 	fi

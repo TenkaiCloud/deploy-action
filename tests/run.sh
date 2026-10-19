@@ -161,7 +161,19 @@ deploy TENKAI_PATH="$work/output"
 check "refuses a linked path that holds a link" exits 1
 check "sends nothing when a linked path holds a link" posts 0
 rm "$work/output"
+
 rm "$site/leak"
+
+# A path through a link then ..: the system resolves the link before the .., as tar did, so another site with the
+# same name next to the link is not the one sent.
+mkdir -p "$work/release/build" "$work/release/dist"
+echo '<div id=release>' >"$work/release/dist/index.html"
+ln -s "$work/release/build" "$work/link"
+tenkai 202 succeeded
+deploy TENKAI_PATH="$work/link/../dist"
+check "deploys the directory a path names through a link" exits 0
+check "sends the site the link leads to" [ "$(tar -xzOf "$work/sent.tar.gz" ./index.html)" == "<div id=release>" ]
+rm -r "$work/link" "$work/release"
 
 tenkai 202 succeeded
 deploy TENKAI_PATH="$site/index.html"
