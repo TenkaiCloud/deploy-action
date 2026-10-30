@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # Asks Tenkai for a Deployment through a Deploy Hook, then reads the Deployment until it ends. With TENKAI_PATH, sends
-# the content of that directory as the tar.gz of a Web Application of Static Files.
+# the content of that directory as the tar.gz of a Web Application of Static Files. With TENKAI_PULL_REQUEST and
+# TENKAI_IMAGE_TAG, deploys that tag of the image of the Web Application into the preview of the pull request.
 # Exits 0 when the Deployment succeeded, or was queued and TENKAI_WAIT is "false". Exits 1 otherwise.
 
 set -euo pipefail
@@ -12,6 +13,8 @@ wait_for_end="${TENKAI_WAIT:-true}"
 timeout="${TENKAI_TIMEOUT:-900}"
 interval="${TENKAI_INTERVAL:-5}"
 path="${TENKAI_PATH:-}"
+pull_request="${TENKAI_PULL_REQUEST:-}"
+image_tag="${TENKAI_IMAGE_TAG:-}"
 # The size of the archive Tenkai accepts. Tenkai stops reading beyond it, so the step checks it before it sends.
 max_archive_bytes=$((100 * 1024 * 1024))
 # How many reads in a row may fail before the step gives up: a 5xx, a 429 or a network error.
@@ -20,6 +23,23 @@ max_failed_reads=5
 if ! [[ "$timeout" =~ ^[0-9]+$ && "$interval" =~ ^[1-9][0-9]*$ ]]; then
 	echo "::error::timeout and interval are numbers of seconds, and interval is at least 1"
 	exit 1
+fi
+
+if [[ -n "$pull_request" || -n "$image_tag" ]]; then
+	if [[ -z "$pull_request" || -z "$image_tag" ]]; then
+		echo "::error::Set pull_request and image_tag together to deploy into the preview of a pull request"
+		exit 1
+	fi
+
+	if ! [[ "$pull_request" =~ ^[1-9][0-9]*$ ]]; then
+		echo "::error::pull_request is the number of the pull request, such as 12, and $pull_request is not one"
+		exit 1
+	fi
+
+	if [[ -n "$path" ]]; then
+		echo "::error::A preview deploys an image, which takes no path. Leave path out, or pull_request and image_tag"
+		exit 1
+	fi
 fi
 
 # The secret is a step input, which GitHub does not mask unless it came from a secret.
@@ -36,10 +56,40 @@ request() {
 		--header "Authorization: Bearer $TENKAI_DEPLOY_HOOK_SECRET" "$@" || true
 }
 
-# What Tenkai says of a refusal, or the HTTP status when the body is not the JSON of a refusal.
+# What Tenkai says of a refusal, or the HTTP status when the body is not the JSON of a refusal, with what to do for a
+# refusal of a preview.
 refusal() {
-	jq --exit-status --raw-output 'select(.error and .message) | "\(.error): \(.message)"' "$body" 2>/dev/null ||
+	local said error
+
+	if ! said=$(jq --exit-status --raw-output 'select(.error and .message) | "\(.error): \(.message)"' "$body" 2>/dev/null); then
 		echo "HTTP $1"
+		return
+	fi
+
+	error=${said%%:*}
+
+	case "$error" in
+	invalid_image_tag)
+		said+=". Set image_tag to the tag you pushed of the image the Web Application deploys, such as pr-$pull_request, without the name of the image"
+		;;
+	invalid_preview_request)
+		said+=". Set pull_request and image_tag together"
+		;;
+	preview_not_found)
+		said+=". Check that previews are on for the project and that pull request #$pull_request has an open preview. A preview opened before Tenkai deployed images takes them once the pull request is closed and reopened"
+		;;
+	preview_not_open)
+		said+=". The first preview of a project waits about a minute for its database. Run the job again"
+		;;
+	preview_image_changed)
+		said+=". Close and reopen the pull request so its preview copies the image the Web Application deploys now"
+		;;
+	preview_ambiguous)
+		said+=". Name the image after the repository of the pull request, as ghcr.io/<owner>/<repository>"
+		;;
+	esac
+
+	echo "$said"
 }
 
 output() {
@@ -96,8 +146,17 @@ if [[ -n "$path" ]]; then
 	files=(--max-time 600 --header "Content-Type: application/gzip" --data-binary "@$archive")
 fi
 
+url="$TENKAI_DEPLOY_HOOK_URL"
+
+if [[ -n "$pull_request" ]]; then
+	query=$(jq --null-input --raw-output --arg pr "$pull_request" --arg tag "$image_tag" \
+		'"pull_request=\($pr | @uri)&image_tag=\($tag | @uri)"')
+	url+="?$query"
+	echo "Deploying image tag $image_tag into the preview of pull request #$pull_request"
+fi
+
 # The expansion stays empty under set -u in the bash 3 of macOS.
-status=$(request --request POST ${files[@]+"${files[@]}"} "$TENKAI_DEPLOY_HOOK_URL")
+status=$(request --request POST ${files[@]+"${files[@]}"} "$url")
 
 if [[ "$status" != "202" ]]; then
 	echo "::error::Tenkai did not queue the Deployment. $(refusal "$status")"
