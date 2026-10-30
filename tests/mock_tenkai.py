@@ -57,7 +57,8 @@ class Tenkai(BaseHTTPRequestHandler):
 
             return
 
-        url = f"http://127.0.0.1:{port}{self.path}/deployments/{deployment_id}"
+        hook = self.path.split("?")[0]
+        url = f"http://127.0.0.1:{port}{hook}/deployments/{deployment_id}"
         self.answer(202, {"deployment": {"id": deployment_id, "url": url}})
 
     def do_GET(self):

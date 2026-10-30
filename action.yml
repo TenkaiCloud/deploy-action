@@ -16,6 +16,14 @@ inputs:
     description: The directory to deploy to a Web Application of Static Files, such as "dist". The action sends its content. Leave it out for any other Web Application.
     required: false
     default: ''
+  pull_request:
+    description: The number of a pull request whose preview takes the image, such as the number of the event of a pull_request workflow. Set it with image_tag, and leave it out to deploy the Web Application itself.
+    required: false
+    default: ''
+  image_tag:
+    description: The tag of the image of the Web Application that the workflow built for the pull request, such as "pr-12". Set it with pull_request.
+    required: false
+    default: ''
   wait:
     description: Wait for the Deployment to end and fail when it fails. Set to "false" to stop once Tenkai queued it.
     required: false
@@ -50,6 +58,8 @@ runs:
         TENKAI_DEPLOY_HOOK_URL: ${{ inputs.deploy_hook_url }}
         TENKAI_DEPLOY_HOOK_SECRET: ${{ inputs.deploy_hook_secret }}
         TENKAI_PATH: ${{ inputs.path }}
+        TENKAI_PULL_REQUEST: ${{ inputs.pull_request }}
+        TENKAI_IMAGE_TAG: ${{ inputs.image_tag }}
         TENKAI_WAIT: ${{ inputs.wait }}
         TENKAI_TIMEOUT: ${{ inputs.timeout }}
         TENKAI_INTERVAL: ${{ inputs.interval }}
