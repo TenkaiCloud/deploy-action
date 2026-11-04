@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
 # Asks Tenkai for a Deployment through a Deploy Hook, then reads the Deployment until it ends. With TENKAI_PATH, sends
-# the content of that directory as the tar.gz of a Web Application of Static Files. With TENKAI_PULL_REQUEST and
-# TENKAI_IMAGE_TAG, deploys that tag of the image of the Web Application into the preview of the pull request.
+# the content of that directory as the tar.gz of a Web Application of Static Files. With TENKAI_IMAGE_TAG, deploys that
+# tag of the image of the Web Application, which keeps it, or with TENKAI_PULL_REQUEST into the preview of the pull
+# request.
 # Exits 0 when the Deployment succeeded, or was queued and TENKAI_WAIT is "false". Exits 1 otherwise.
 
 set -euo pipefail
@@ -25,9 +26,9 @@ if ! [[ "$timeout" =~ ^[0-9]+$ && "$interval" =~ ^[1-9][0-9]*$ ]]; then
 	exit 1
 fi
 
-if [[ -n "$pull_request" || -n "$image_tag" ]]; then
-	if [[ -z "$pull_request" || -z "$image_tag" ]]; then
-		echo "::error::Set pull_request and image_tag together to deploy into the preview of a pull request"
+if [[ -n "$pull_request" ]]; then
+	if [[ -z "$image_tag" ]]; then
+		echo "::error::Set image_tag with pull_request to deploy into the preview of a pull request"
 		exit 1
 	fi
 
@@ -35,11 +36,11 @@ if [[ -n "$pull_request" || -n "$image_tag" ]]; then
 		echo "::error::pull_request is the number of the pull request, such as 12, and $pull_request is not one"
 		exit 1
 	fi
+fi
 
-	if [[ -n "$path" ]]; then
-		echo "::error::A preview deploys an image, which takes no path. Leave path out, or pull_request and image_tag"
-		exit 1
-	fi
+if [[ -n "$image_tag" && -n "$path" ]]; then
+	echo "::error::An image tag deploys an image, which takes no path. Leave path out, or image_tag"
+	exit 1
 fi
 
 # The secret is a step input, which GitHub does not mask unless it came from a secret.
@@ -57,7 +58,7 @@ request() {
 }
 
 # What Tenkai says of a refusal, or the HTTP status when the body is not the JSON of a refusal, with what to do for a
-# refusal of a preview.
+# refusal of an image tag or a preview.
 refusal() {
 	local said error
 
@@ -70,10 +71,10 @@ refusal() {
 
 	case "$error" in
 	invalid_image_tag)
-		said+=". Set image_tag to the tag you pushed of the image the Web Application deploys, such as pr-$pull_request, without the name of the image"
+		said+=". Set image_tag to the tag you pushed of the image the Web Application deploys, such as ${pull_request:+pr-$pull_request}${pull_request:-sha-1a2b3c4}, without the name of the image. A Web Application that builds from Git takes no tag"
 		;;
 	invalid_preview_request)
-		said+=". Set pull_request and image_tag together"
+		said+=". Set image_tag with pull_request"
 		;;
 	preview_not_found)
 		said+=". Check that previews are on for the project and that pull request #$pull_request has an open preview. A preview opened before Tenkai deployed images takes them once the pull request is closed and reopened"
@@ -153,6 +154,9 @@ if [[ -n "$pull_request" ]]; then
 		'"pull_request=\($pr | @uri)&image_tag=\($tag | @uri)"')
 	url+="?$query"
 	echo "Deploying image tag $image_tag into the preview of pull request #$pull_request"
+elif [[ -n "$image_tag" ]]; then
+	url+="?image_tag=$(jq --null-input --raw-output --arg tag "$image_tag" '$tag | @uri')"
+	echo "Deploying image tag $image_tag"
 fi
 
 # The expansion stays empty under set -u in the bash 3 of macOS.

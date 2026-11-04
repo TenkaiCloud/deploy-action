@@ -138,8 +138,24 @@ check "encodes the tag in the query" sent "?pull_request=12&image_tag=pr%2012%26
 tenkai 202 succeeded
 deploy TENKAI_PULL_REQUEST=12
 check "refuses a pull request without a tag" exits 1
-check "says to set both" logs "Set pull_request and image_tag together"
+check "says to set the tag" logs "Set image_tag with pull_request"
 check "sends nothing without a tag" posts 0
+
+tenkai 202 succeeded
+deploy TENKAI_IMAGE_TAG=sha-1a2b3c4
+check "deploys a tag of the image of the Web Application" exits 0
+check "names only the tag in the query" sent "?image_tag=sha-1a2b3c4 - 0"
+check "reads the Deployment of the tag" reads 1
+
+tenkai 422:invalid_image_tag
+deploy TENKAI_IMAGE_TAG=sha-1a2b3c4
+check "fails when Tenkai refuses the tag" exits 1
+check "says what to do with a refused tag" logs "such as sha-1a2b3c4, without the name of the image"
+
+tenkai 202 succeeded
+deploy TENKAI_IMAGE_TAG=sha-1a2b3c4 TENKAI_PATH=dist
+check "refuses a tag with a path" exits 1
+check "sends nothing for a tag with a path" posts 0
 
 tenkai 202 succeeded
 deploy TENKAI_PULL_REQUEST=pr-12 TENKAI_IMAGE_TAG=pr-12
