@@ -21,7 +21,7 @@ inputs:
     required: false
     default: ''
   image_tag:
-    description: The tag of the image of the Web Application that the workflow built for the pull request, such as "pr-12". Set it with pull_request.
+    description: The tag of the image of the Web Application to deploy, such as "sha-1a2b3c4". The Web Application keeps it. With pull_request, the tag the workflow built for the pull request, such as "pr-12", which deploys into its preview.
     required: false
     default: ''
   wait:

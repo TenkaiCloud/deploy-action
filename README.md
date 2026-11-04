@@ -31,7 +31,7 @@ jobs:
           deploy_hook_secret: ${{ secrets.TENKAI_DEPLOY_HOOK_SECRET }}
 ```
 
-Tenkai deploys the Web Application as it is configured: its Build Source, its revision and its Variables. Without `path`, the action sends nothing of your repository. For a preview, `image_tag` names the tag to deploy. To deploy an image the workflow builds, publish the image first, then run this action in a later step.
+Tenkai deploys the Web Application as it is configured: its Build Source, its revision and its Variables. Without `path`, the action sends nothing of your repository. `image_tag` names the tag of its image to deploy. To deploy an image the workflow builds, publish the image first, then run this action in a later step.
 
 ### Deploy Static Files
 
@@ -70,6 +70,35 @@ jobs:
 ```
 
 Tenkai takes files and directories only: the step fails when the directory holds a symbolic link. It packs a hard-linked file as a regular file on Linux runners, and fails on one on macOS runners, whose tar cannot. The archive must stay under 100 MB, and the files under 512 MB and 50,000 entries.
+
+### Promote an image from one environment to the next
+
+For a Web Application deployed from a container image, `image_tag` deploys that tag of its image, and the Web Application keeps it. Build one image per commit, then give each environment a job that deploys the same tag once the job before it succeeded. No tag moves in the registry. A [GitHub environment](https://docs.github.com/actions/deployment/targeting-different-environments/using-environments-for-deployment) can ask for an approval before production:
+
+```yaml
+jobs:
+  development:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: TenkaiCloud/deploy-action@v1.3.0
+        with:
+          deploy_hook_url: ${{ secrets.TENKAI_DEPLOY_HOOK_URL_DEV }}
+          deploy_hook_secret: ${{ secrets.TENKAI_DEPLOY_HOOK_SECRET_DEV }}
+          image_tag: sha-${{ github.sha }}
+
+  production:
+    needs: development
+    environment: production
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: TenkaiCloud/deploy-action@v1.3.0
+        with:
+          deploy_hook_url: ${{ secrets.TENKAI_DEPLOY_HOOK_URL_PROD }}
+          deploy_hook_secret: ${{ secrets.TENKAI_DEPLOY_HOOK_SECRET_PROD }}
+          image_tag: sha-${{ github.sha }}
+```
+
+The action waits for each Deployment to end, so a failure in development stops the image there. `image_tag` alone needs v1.3.0 or later: an older action refuses it.
 
 ### Deploy into the preview of a pull request
 
@@ -136,7 +165,7 @@ Tenkai deploys that tag of the image the Web Application deploys into its copy i
 | `deploy_hook_secret` |         | The secret of the Deploy Hook. Required.                                                  |
 | `path`               |         | The directory to deploy to a Static Files Web Application, such as `dist`.                |
 | `pull_request`       |         | The number of the pull request whose preview takes the image. Set it with `image_tag`.    |
-| `image_tag`          |         | The tag of the image the workflow built for the pull request, such as `pr-12`.            |
+| `image_tag`          |         | The tag of the image to deploy, such as `sha-1a2b3c4`, or `pr-12` with `pull_request`.    |
 | `wait`               | `true`  | Wait for the Deployment to end. With `false`, the step stops once Tenkai queued it.       |
 | `timeout`            | `900`   | How many seconds to wait for the Deployment to end before the step fails.                 |
 | `interval`           | `5`     | How many seconds to wait between two reads of the Deployment.                             |
@@ -152,7 +181,7 @@ Tenkai deploys that tag of the image the Web Application deploys into its copy i
 ## When the step fails
 
 - **Tenkai did not queue the Deployment.** The log gives the code and the message of Tenkai. `mutation_in_progress` means another Deployment of the Web Application runs: add a `concurrency` group to the workflow so two runs do not deploy at once. `invalid_deploy_hook_secret` means the secret was rotated or revoked. `static_files_required` means the Web Application deploys Static Files and needs `path`, and `static_files_not_accepted` that it does not and takes no `path`. `invalid_archive` and `archive_too_large` tell what Tenkai refused in the files, such as a directory without `index.html` at its root.
-- **Tenkai did not deploy into the preview.** The log gives the code, the message of Tenkai and what to do. `preview_not_found` means the pull request has no open preview that copied this Web Application. `preview_not_open` means the preview still opens: run the job again. `invalid_image_tag` means `image_tag` is not a tag of the image of the Web Application. `preview_image_changed` means the Web Application deploys another image than the one its preview copied: close and reopen the pull request. `preview_ambiguous` means pull requests of several repositories have this number, and the image is named after none of them.
+- **Tenkai did not deploy into the preview.** The log gives the code, the message of Tenkai and what to do. `preview_not_found` means the pull request has no open preview that copied this Web Application. `preview_not_open` means the preview still opens: run the job again. `invalid_image_tag` means `image_tag` is not a tag of the image of the Web Application, or that the Web Application builds from Git. `preview_image_changed` means the Web Application deploys another image than the one its preview copied: close and reopen the pull request. `preview_ambiguous` means pull requests of several repositories have this number, and the image is named after none of them.
 - **The Deployment failed.** The log gives the reason. Open the Web Application in Tenkai to read the logs of the Deployment.
 - **The Deployment did not end in time.** It still runs on Tenkai. Raise `timeout` if your builds are long.
 
