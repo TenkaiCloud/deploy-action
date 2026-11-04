@@ -71,7 +71,7 @@ refusal() {
 
 	case "$error" in
 	invalid_image_tag)
-		said+=". Set image_tag to the tag you pushed of the image the Web Application deploys, such as ${pull_request:+pr-$pull_request}${pull_request:-sha-1a2b3c4}, without the name of the image. A Web Application that builds from Git takes no tag"
+		said+=". Set image_tag to the tag you pushed of the image the Web Application deploys, such as ${pull_request:+pr-}${pull_request:-sha-1a2b3c4}, without the name of the image. A Web Application that builds from Git takes no tag"
 		;;
 	invalid_preview_request)
 		said+=". Set image_tag with pull_request"

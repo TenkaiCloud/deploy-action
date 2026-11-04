@@ -152,8 +152,11 @@ deploy TENKAI_IMAGE_TAG=sha-1a2b3c4
 check "fails when Tenkai refuses the tag" exits 1
 check "says what to do with a refused tag" logs "such as sha-1a2b3c4, without the name of the image"
 
+# A directory the action could pack, so only the guard of the tag refuses the path.
+mkdir -p "$work/built"
+echo '<div id=app>' >"$work/built/index.html"
 tenkai 202 succeeded
-deploy TENKAI_IMAGE_TAG=sha-1a2b3c4 TENKAI_PATH=dist
+deploy TENKAI_IMAGE_TAG=sha-1a2b3c4 TENKAI_PATH="$work/built"
 check "refuses a tag with a path" exits 1
 check "sends nothing for a tag with a path" posts 0
 
@@ -169,6 +172,10 @@ for refused in 422:invalid_image_tag 404:preview_not_found 409:preview_not_open 
 	deploy TENKAI_PULL_REQUEST=12 TENKAI_IMAGE_TAG=pr-12
 	check "fails when Tenkai refuses the preview with $error" exits 1
 	check "gives what Tenkai said of $error and what to do" logs "$error: Tenkai refused with $error. "
+
+	if [[ "$error" == invalid_image_tag ]]; then
+		check "gives the tag of the pull request as an example" logs "such as pr-12, without the name of the image"
+	fi
 
 	if [[ "$error" == preview_not_found ]]; then
 		check "says which pull request has no preview" logs "pull request #12 has an open preview"
