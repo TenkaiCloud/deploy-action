@@ -91,6 +91,11 @@ check "fails when Tenkai refuses the Deployment" exits 1
 check "says why Tenkai refused" logs "mutation_in_progress: Tenkai refused with mutation_in_progress"
 check "reads nothing after a refusal" reads 0
 
+tenkai 409:application_paused
+deploy
+check "fails when the Application is paused" exits 1
+check "says to resume the paused Application" logs "::error::Tenkai did not queue the Deployment. application_paused: Tenkai refused with application_paused. Resume the Application in Tenkai, then run the job again"
+
 tenkai 202 started
 deploy TENKAI_WAIT=false
 check "stops once the Deployment is queued when it does not wait" exits 0

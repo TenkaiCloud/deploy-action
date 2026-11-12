@@ -58,7 +58,7 @@ request() {
 }
 
 # What Tenkai says of a refusal, or the HTTP status when the body is not the JSON of a refusal, with what to do for a
-# refusal of an image tag or a preview.
+# paused Application or a refusal of an image tag or a preview.
 refusal() {
 	local said error
 
@@ -70,6 +70,9 @@ refusal() {
 	error=${said%%:*}
 
 	case "$error" in
+	application_paused)
+		said+=". Resume the Application in Tenkai, then run the job again"
+		;;
 	invalid_image_tag)
 		said+=". Set image_tag to the tag you pushed of the image the Web Application deploys, such as ${pull_request:+pr-}${pull_request:-sha-1a2b3c4}, without the name of the image. A Web Application that builds from Git takes no tag"
 		;;
